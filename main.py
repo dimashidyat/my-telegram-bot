@@ -1,12 +1,14 @@
 from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor
 import datetime
 import random
 
 # Token dan Chat ID
 TOKEN = "7092522264:AAHsi2KM-8D8XcfIg09vptDyHiB28lRKQJY"
 CHAT_ID = "2031898002"
+PHONE_NUMBER = "+6281776633344"
 CHANNEL_URL = "https://t.me/latihansoalbumn2025"
 
 # Data Penyimpanan
@@ -17,15 +19,14 @@ motivasi_list = [
     "Kamu lebih kuat dari apa yang kamu pikirkan.",
 ]
 
-# Fungsi Log Aktivitas (termasuk status minyak)
+# Fungsi Log Aktivitas
 def log(update: Update, context: CallbackContext):
     try:
         kategori = context.args[0].lower()
         deskripsi = " ".join(context.args[1:])
         waktu = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if kategori == "minyak":
-            if deskripsi not in ["masih", "habis"]:
-                raise ValueError
+        if kategori == "minyak" and deskripsi not in ["masih", "habis"]:
+            raise ValueError
         data_log["aktivitas"].append({"kategori": kategori, "deskripsi": deskripsi, "waktu": waktu})
         update.message.reply_text(f"Log aktivitas '{kategori}' berhasil disimpan dengan status '{deskripsi}'.")
     except:
@@ -49,7 +50,7 @@ def statistik(update: Update, context: CallbackContext):
         parse_mode=ParseMode.MARKDOWN,
     )
 
-# Fungsi Latihan Soal BUMN (dari channel)
+# Fungsi Latihan Soal BUMN
 def soal_bumn(update: Update, context: CallbackContext):
     update.message.reply_text(
         f"📚 Soal latihan terbaru dapat diakses melalui channel berikut:\n{CHANNEL_URL}",
@@ -60,9 +61,9 @@ def soal_bumn(update: Update, context: CallbackContext):
 def motivasi(update: Update, context: CallbackContext):
     update.message.reply_text(random.choice(motivasi_list))
 
-# Fungsi Reminder Otomatis
+# Fungsi Auto Reminder
 def auto_reminder(context: CallbackContext):
-    pesan = "⏰ Selamat pagi! Jangan lupa lakukan hal produktif hari ini. Semangat 💪"
+    pesan = f"⏰ Selamat pagi! Jangan lupa lakukan hal produktif hari ini. Semangat 💪\nHubungi saya di WhatsApp {PHONE_NUMBER} jika ada pertanyaan."
     context.bot.send_message(chat_id=CHAT_ID, text=pesan)
 
 # Fungsi Pomodoro Timer
@@ -94,6 +95,7 @@ def start(update: Update, context: CallbackContext):
 
 # Main Function
 def main():
+    # Menjalankan bot
     updater = Updater(TOKEN)
     dp = updater.dispatcher
 
@@ -104,9 +106,9 @@ def main():
     dp.add_handler(CommandHandler("motivasi", motivasi))
     dp.add_handler(CommandHandler("pomodoro", pomodoro))
 
-    # Jadwal Auto Reminder
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(auto_reminder, "cron", hour=5, minute=0, args=[updater.bot])  # Reminder pukul 05.00 pagi
+    # Scheduler untuk Auto Reminder
+    scheduler = BackgroundScheduler(executors={"default": ThreadPoolExecutor(10)})
+    scheduler.add_job(auto_reminder, "cron", hour=5, minute=0, args=[updater.bot])
     scheduler.start()
 
     updater.start_polling()
