@@ -1,133 +1,117 @@
-import os
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
-import schedule
-import time
-import threading
-import json
+from telegram import Update, ParseMode
+from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
+from apscheduler.schedulers.background import BackgroundScheduler
+import datetime
 import random
 
-# Masukkan API Token bot lo
+# Token dan Chat ID
 TOKEN = "7092522264:AAHsi2KM-8D8XcfIg09vptDyHiB28lRKQJY"
 CHAT_ID = "2031898002"
-DATA_FILE = "user_data.json"
+CHANNEL_URL = "https://t.me/latihansoalbumn2025"
 
-# Inisialisasi data tracking
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w") as f:
-        json.dump({}, f)
+# Data Penyimpanan
+data_log = {"pengeluaran": [], "pemasukan": [], "aktivitas": []}
+motivasi_list = [
+    "Kegagalan adalah jalan menuju kesuksesan.",
+    "Jangan pernah menyerah, sukses sudah menunggu di depan!",
+    "Kamu lebih kuat dari apa yang kamu pikirkan.",
+]
 
-# Fungsi untuk baca data JSON
-def read_data():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+# Fungsi Log Aktivitas (termasuk status minyak)
+def log(update: Update, context: CallbackContext):
+    try:
+        kategori = context.args[0].lower()
+        deskripsi = " ".join(context.args[1:])
+        waktu = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if kategori == "minyak":
+            if deskripsi not in ["masih", "habis"]:
+                raise ValueError
+        data_log["aktivitas"].append({"kategori": kategori, "deskripsi": deskripsi, "waktu": waktu})
+        update.message.reply_text(f"Log aktivitas '{kategori}' berhasil disimpan dengan status '{deskripsi}'.")
+    except:
+        update.message.reply_text("Format salah! Gunakan: /log <kategori> <deskripsi>\n\nContoh untuk minyak: /log minyak habis")
 
-# Fungsi untuk tulis data JSON
-def write_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
-
-# Reminder otomatis
-def send_reminder(bot, text):
-    bot.send_message(chat_id=CHAT_ID, text=text)
-
-def scheduler(bot):
-    schedule.every().day.at("04:45").do(send_reminder, bot=bot, text="Bangun bro, waktunya sholat Subuh!")
-    schedule.every().day.at("05:15").do(send_reminder, bot=bot, text="Olahraga dulu biar otot jadi!")
-    schedule.every().day.at("10:00").do(send_reminder, bot=bot, text="Belajar CPNS 2 jam, fokus ya!")
-    schedule.every().day.at("21:00").do(send_reminder, bot=bot, text="Evaluasi hari ini, lo udah keren bro!")
-    schedule.every().day.at("22:00").do(send_reminder, bot=bot, text="Jangan lupa catat progress harian lo!")
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-# Fungsi untuk log otomatis
-def auto_log(update, context, category, prompt):
-    data = read_data()
-    user_id = str(update.effective_user.id)
-    if user_id not in data:
-        data[user_id] = {"log": {}}
-    if category not in data[user_id]["log"]:
-        data[user_id]["log"][category] = []
-    
-    # Simpan log
-    data[user_id]["log"][category].append(prompt)
-    write_data(data)
-    update.message.reply_text(f"Log otomatis untuk {category}: {prompt} berhasil disimpan.")
-
-# Fungsi Command /start
-def start(update, context):
+# Fungsi Statistik Harian
+def statistik(update: Update, context: CallbackContext):
+    aktivitas = "\n".join(
+        [f"{i+1}. [{a['kategori']}] {a['deskripsi']} - {a['waktu']}" for i, a in enumerate(data_log["aktivitas"])]
+    )
+    total_pengeluaran = sum(p["jumlah"] for p in data_log["pengeluaran"])
+    total_pemasukan = sum(p["jumlah"] for p in data_log["pemasukan"])
     update.message.reply_text(
-        "Halo bro! Gue bot lo. Siap bantu lo jadi lebih produktif. Ketik /menu buat lihat fitur."
+        f"""📊 *Statistik Harian:*
+- Total Pengeluaran: Rp. {total_pengeluaran:,}
+- Total Pemasukan: Rp. {total_pemasukan:,}
+
+📝 *Log Aktivitas:*
+{aktivitas if aktivitas else "Tidak ada aktivitas tercatat."}
+        """,
+        parse_mode=ParseMode.MARKDOWN,
     )
 
-# Fungsi Command /menu
-def menu(update, context):
-    keyboard = [
-        [InlineKeyboardButton("📋 Log Aktivitas", callback_data="log_menu"),
-         InlineKeyboardButton("📚 Study Hub", callback_data="study_hub")],
-        [InlineKeyboardButton("💰 Finance Tracker", callback_data="finance_menu"),
-         InlineKeyboardButton("📊 Statistik", callback_data="stats_menu")],
-        [InlineKeyboardButton("📝 Reminder", callback_data="reminder_menu"),
-         InlineKeyboardButton("🔥 Motivasi", callback_data="motivasi")]
-    ]
-
+# Fungsi Latihan Soal BUMN (dari channel)
+def soal_bumn(update: Update, context: CallbackContext):
     update.message.reply_text(
-        "Pilih menu:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        f"📚 Soal latihan terbaru dapat diakses melalui channel berikut:\n{CHANNEL_URL}",
+        parse_mode=ParseMode.MARKDOWN,
     )
 
-# Fungsi Latihan Soal Otomatis
-def soal_otomatis(update, context):
-    soal_list = [
-        "Apa kepanjangan BUMN?",
-        "Siapa Presiden pertama Indonesia?",
-        "2 + 2 x 2 = ?"
-    ]
-    soal = random.choice(soal_list)
-    update.message.reply_text(f"Latihan Soal: {soal}")
+# Fungsi Motivasi Harian
+def motivasi(update: Update, context: CallbackContext):
+    update.message.reply_text(random.choice(motivasi_list))
 
-# Fungsi Timer Belajar
-def start_timer(update, context):
-    update.message.reply_text("Pomodoro Timer dimulai: 25 menit fokus.")
-    time.sleep(25 * 60)  # 25 menit
-    update.message.reply_text("Waktu fokus selesai. Istirahat 5 menit!")
-    time.sleep(5 * 60)  # 5 menit
-    update.message.reply_text("Istirahat selesai. Siap fokus lagi!")
+# Fungsi Reminder Otomatis
+def auto_reminder(context: CallbackContext):
+    pesan = "⏰ Selamat pagi! Jangan lupa lakukan hal produktif hari ini. Semangat 💪"
+    context.bot.send_message(chat_id=CHAT_ID, text=pesan)
 
-# Fungsi Statistik Sederhana
-def stats(update, context):
-    data = read_data()
-    user_id = str(update.effective_user.id)
-    if user_id not in data:
-        update.message.reply_text("Belum ada data untuk statistik.")
-        return
-    
-    log = data[user_id]["log"]
-    stats_text = "📊 Statistik Harian:\n"
-    for category, entries in log.items():
-        stats_text += f"- {category.capitalize()}: {len(entries)} kali\n"
-    
-    update.message.reply_text(stats_text)
+# Fungsi Pomodoro Timer
+def pomodoro(update: Update, context: CallbackContext):
+    try:
+        waktu = int(context.args[0])  # Waktu dalam menit
+        context.job_queue.run_once(
+            pomodoro_selesai, waktu * 60, context=update.message.chat_id, name=str(update.message.chat_id)
+        )
+        update.message.reply_text(f"⏳ Pomodoro dimulai: {waktu} menit.")
+    except:
+        update.message.reply_text("Format salah! Gunakan: /pomodoro <waktu (menit)>")
 
-# Main function
+def pomodoro_selesai(context: CallbackContext):
+    context.bot.send_message(chat_id=context.job.context, text="⏰ Pomodoro selesai! Waktunya istirahat.")
+
+# Fungsi Start
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "Selamat datang di bot manajemen harian!\n\n"
+        "📝 *Fitur Bot:*\n"
+        "- /log <kategori> <deskripsi>: Tambah log aktivitas.\n"
+        "- /statistik: Lihat statistik log harian.\n"
+        "- /soal_bumn: Lihat soal latihan terbaru dari channel BUMN.\n"
+        "- /motivasi: Dapatkan motivasi harian.\n"
+        "- /pomodoro <waktu>: Timer belajar fokus.\n\n"
+        "💡 Jangan lupa tetap produktif ya!"
+    )
+
+# Main Function
 def main():
-    updater = Updater(TOKEN, use_context=True)
+    updater = Updater(TOKEN)
     dp = updater.dispatcher
 
-    # Command Handlers
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("menu", menu))
-    dp.add_handler(CommandHandler("stats", stats))
-    dp.add_handler(CommandHandler("soal", soal_otomatis))
-    dp.add_handler(CommandHandler("timer", start_timer))
+    dp.add_handler(CommandHandler("log", log))
+    dp.add_handler(CommandHandler("statistik", statistik))
+    dp.add_handler(CommandHandler("soal_bumn", soal_bumn))
+    dp.add_handler(CommandHandler("motivasi", motivasi))
+    dp.add_handler(CommandHandler("pomodoro", pomodoro))
 
-    # Scheduler buat reminder
-    threading.Thread(target=scheduler, args=(updater.bot,)).start()
+    # Jadwal Auto Reminder
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(auto_reminder, "cron", hour=5, minute=0, args=[updater.bot])  # Reminder pukul 05.00 pagi
+    scheduler.start()
 
     updater.start_polling()
     updater.idle()
+
 
 if __name__ == "__main__":
     main()
