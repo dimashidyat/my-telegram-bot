@@ -1,40 +1,28 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes
-)
 import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 import json
 from datetime import datetime
+from config import PEMPEK_PRICES
 
-# Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
-)
 logger = logging.getLogger(__name__)
 
 class PempekHandler:
     def __init__(self):
         self.daily_data = {}
-        self.default_prices = {
-            'kecil': 2500,
-            'gede': 12000,
-            'standard_items': {
-                'air': 4000,
-                'gas': 22000
-            }
-        }
+        self.default_prices = PEMPEK_PRICES
 
     async def setup_handlers(self, application: Application):
         """Setup all handlers"""
-        application.add_handler(CallbackQueryHandler(self.handle_callback))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            self.handle_message
+        ))
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle callback queries"""
+        """Handle pempek menu callbacks"""
         query = update.callback_query
-        await query.answer()  # Always answer callback query first
-
+        
         if query.data == "pempek_menu":
             await self.show_menu(update, context)
         elif query.data == "pempek_modal":
@@ -59,7 +47,8 @@ class PempekHandler:
             [
                 InlineKeyboardButton("💳 Input Setoran", callback_data="pempek_setoran"),
                 InlineKeyboardButton("📊 Laporan", callback_data="pempek_report")
-            ]
+            ],
+            [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -78,7 +67,7 @@ class PempekHandler:
             "• Setoran = total QRIS + cash"
         )
 
-        if update.callback_query:
+        if hasattr(update, 'callback_query') and update.callback_query:
             await update.callback_query.edit_message_text(
                 text=text,
                 reply_markup=reply_markup,
@@ -148,19 +137,8 @@ class PempekHandler:
             # Handle other message types or return to menu
             await self.show_menu(update, context)
 
-    def save_data(self):
-        """Save data to file"""
-        try:
-            with open('pempek_data.json', 'w') as f:
-                json.dump(self.daily_data, f)
-        except Exception as e:
-            logger.error(f"Error saving data: {e}")
-
-    def load_data(self):
-        """Load data from file"""
-        try:
-            with open('pempek_data.json', 'r') as f:
-                self.daily_data = json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading data: {e}")
-            self.daily_data = {}
+    async def handle_modal_input(self, update: Update, item: str = None):
+        """Process modal input"""
+        user_id = str(update.effective_user.id)
+        
+        if
