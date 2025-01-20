@@ -3,7 +3,8 @@ import logging
 import asyncio
 from datetime import datetime, time, date
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
+from telegram.constants import ParseMode
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -32,7 +33,7 @@ class LifeManagementBot:
         self.CHAT_ID = "2031898002"
         
         # Personal data
-        self.GIRLFRIEND_PHONE = "6281513607410"
+        self.GIRLFRIEND_PHONE = "6281513607410"  
         self.MY_PHONE = "6281776633344"
         self.ANNIVERSARY_DATE = date(2021, 9, 13)
         
@@ -67,6 +68,14 @@ class LifeManagementBot:
                 name=f'prayer_{prayer.lower()}',
                 data={'prayer': prayer}
             )
+        
+        # Monthly Anniversary reminder (00:00 on 13th)
+        application.job_queue.run_daily(
+            self.check_monthly_anniversary,
+            time=time(0, 0),
+            chat_id=self.CHAT_ID,
+            name='monthly_anniversary'
+        )
         
         # Anniversary check (00:00)
         application.job_queue.run_daily(
@@ -188,18 +197,46 @@ Ketik laporan sesuai format di atas.
             text=f"🕌 Waktu {prayer} telah tiba!\n\nJangan lupa sholat ya..."
         )
 
-    async def check_anniversary(self, context: ContextTypes.DEFAULT_TYPE):
-        """Check and send anniversary reminder."""
+    async def check_monthly_anniversary(self, context: ContextTypes.DEFAULT_TYPE):
+        """Check and send monthly anniversary reminder."""
         today = date.today()
-        if today.day == 13:
+        if today.day == 13:  # Cek setiap tanggal 13
             months = self.calculate_months()
             message = f"""
-🎉 *Happy {months} Month Anniversary!* 🎉
+🎉 *Monthly Anniversary ke-{months}!* 🎉
 
 Alhamdulillah sudah {months} bulan kita jalani bersama.
 Semoga kita bisa terus bersama sampai halal ya sayang.
 
 I love you so much! 💑
+            """
+            keyboard = [
+                [InlineKeyboardButton("💝 Chat Sayang", url=f"https://wa.me/{self.GIRLFRIEND_PHONE}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=self.CHAT_ID,
+                    text=message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                logger.error(f"Error sending monthly anniversary message: {e}")
+
+    async def check_anniversary(self, context: ContextTypes.DEFAULT_TYPE):
+        """Check and send annual anniversary reminder."""
+        today = date.today()
+        if today.month == self.ANNIVERSARY_DATE.month and today.day == self.ANNIVERSARY_DATE.day:
+            years = today.year - self.ANNIVERSARY_DATE.year
+            message = f"""
+🎉 *Happy {years} Year Anniversary!* 🎉
+
+Alhamdulillah sudah {years} tahun kita jalani bersama.
+Semoga kita bisa terus bersama sampai halal ya sayang.
+
+I love you forever! 💑
             """
             keyboard = [
                 [InlineKeyboardButton("💝 Chat Sayang", url=f"https://wa.me/{self.GIRLFRIEND_PHONE}")]
@@ -300,7 +337,7 @@ I love you so much! 💑
             application.add_handler(conv_handler)
             
             # Start bot
-            print("Bot started successfully!")
+            print("Bot started successfully! 🚀")
             application.run_polling(allowed_updates=Update.ALL_TYPES)
             
         except Exception as e:
