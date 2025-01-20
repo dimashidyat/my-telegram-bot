@@ -2,19 +2,20 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime, date, timedelta
 import logging
-import random
 import json
+import os
+from config import GIRLFRIEND_PHONE, ANNIVERSARY_DATE
 
 logger = logging.getLogger(__name__)
 
 class RelationshipHandler:
     def __init__(self):
-        self.couple_data = {}
-        self.anniversary_date = date(2021, 9, 13)
-        self.girlfriend_phone = "6281513607410"
+        self.data = {}
+        self.girlfriend_phone = GIRLFRIEND_PHONE
+        self.anniversary_date = ANNIVERSARY_DATE
         
-        # Collection of romantic messages
-        self.love_messages = {
+        # Messages templates
+        self.messages = {
             'morning': [
                 "Selamat pagi sayangku 🌅\nSemoga harimu menyenangkan ya...\nI love you! 💖",
                 "Good morning my love! 💝\nJangan lupa sarapan...\nThinking of you always 💭",
@@ -31,116 +32,98 @@ class RelationshipHandler:
                 "Bersamamu, setiap hari terasa spesial 💑"
             ]
         }
+        
+        # Load data
+        self.load_data()
 
-        # Romantic gift ideas
-        self.gift_ideas = {
-            'budget': [
-                "Surat cinta handmade 💌",
-                "Playlist lagu favorit kita 🎵",
-                "Photo collage memories kita 📸"
-            ],
-            'medium': [
-                "Flower bouquet favorit dia 💐",
-                "Parfum kesukaannya 🌸",
-                "Boneka couple yang lucu 🧸"
-            ],
-            'special': [
-                "Surprise birthday dinner 🎂",
-                "Weekend getaway ke tempat favorit 🏖️",
-                "Handmade scrapbook memories 📒"
-            ]
-        }
+    def load_data(self):
+        """Load relationship data"""
+        try:
+            if os.path.exists('data/relationship_data.json'):
+                with open('data/relationship_data.json', 'r') as f:
+                    self.data = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading relationship data: {e}")
 
-        # Date ideas
-        self.date_ideas = {
-            'simple': [
-                {
-                    'name': "Movie Night 🎬",
-                    'desc': "Nonton film favorit bareng, sambil makan snack",
-                    'budget': "50-100k"
-                },
-                {
-                    'name': "Picnic Sore 🧺",
-                    'desc': "Bawa bekal, duduk sambil ngobrol di taman",
-                    'budget': "50-100k"
-                }
-            ],
-            'medium': [
-                {
-                    'name': "Dinner Date 🍽️",
-                    'desc': "Makan malam romantis di resto kesukaan",
-                    'budget': "200-300k"
-                },
-                {
-                    'name': "Adventure Date 🎯",
-                    'desc': "Main ke timezone atau tempat seru lainnya",
-                    'budget': "200-300k"
-                }
-            ],
-            'special': [
-                {
-                    'name': "Staycation Weekend 🏨",
-                    'desc': "Quality time berdua di hotel/villa",
-                    'budget': "500k+"
-                }
-            ]
-        }
+    def save_data(self):
+        """Save relationship data"""
+        try:
+            os.makedirs('data', exist_ok=True)
+            with open('data/relationship_data.json', 'w') as f:
+                json.dump(self.data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving relationship data: {e}")
 
     async def show_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Tampilkan menu relationship yang romantis"""
-        try:
-            months = self.calculate_months()
-            next_date = self.get_next_monthly()
-            days_until = (next_date - date.today()).days
+        """Show relationship menu"""
+        # Calculate relationship stats
+        months = self.calculate_months()
+        next_date = self.get_next_monthly()
+        days_until = (next_date - date.today()).days
+        milestone = self.get_next_milestone(months)
 
-            keyboard = [
-                [
-                    InlineKeyboardButton("💝 Love Notes", callback_data="love_notes"),
-                    InlineKeyboardButton("🎁 Gift Ideas", callback_data="gift_ideas")
-                ],
-                [
-                    InlineKeyboardButton("📅 Date Planner", callback_data="date_planner"),
-                    InlineKeyboardButton("💌 Send Message", callback_data="send_message")
-                ],
-                [
-                    InlineKeyboardButton("🌟 Memories", callback_data="memories"),
-                    InlineKeyboardButton("💑 About Us", callback_data="about_us")
-                ],
-                [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        keyboard = [
+            [
+                InlineKeyboardButton("💝 Love Notes", callback_data="relation_notes"),
+                InlineKeyboardButton("📅 Dates", callback_data="relation_dates")
+            ],
+            [
+                InlineKeyboardButton("💑 Quality Time", callback_data="relation_quality"),
+                InlineKeyboardButton("🎁 Gift Ideas", callback_data="relation_gifts")
+            ],
+            [
+                InlineKeyboardButton("📝 Journal", callback_data="relation_journal"),
+                InlineKeyboardButton("⏰ Reminder", callback_data="relation_reminder")
+            ],
+            [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Get relationship milestone
-            milestone = self.get_next_milestone(months)
-            
-            text = (
-                "*💑 STATUS RELATIONSHIP*\n\n"
-                f"• First Date: 13 September 2021\n"
-                f"• Udah jalan: {months} bulan\n"
-                f"• Monthly ke-{months+1}: {next_date.strftime('%d %B %Y')}\n"
-                f"• Sisa: {days_until} hari lagi\n\n"
-                f"*🎯 Next Milestone:*\n"
-                f"• {milestone['desc']}\n"
-                f"• {milestone['remaining']} bulan lagi\n\n"
-                "_Semoga kita bisa terus bersama ya sayang_ 💕"
+        text = (
+            "*💑 STATUS RELATIONSHIP*\n\n"
+            f"• First Date: {self.anniversary_date.strftime('%d %B %Y')}\n"
+            f"• Udah jalan: {months} bulan\n"
+            f"• Monthly ke-{months+1}: {next_date.strftime('%d %B %Y')}\n"
+            f"• Sisa: {days_until} hari lagi\n\n"
+            f"*🎯 Next Milestone:*\n"
+            f"• {milestone['desc']}\n"
+            f"• {milestone['remaining']} bulan lagi\n\n"
+            "_Semoga bisa terus bersama ya sayang_ 💕"
+        )
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
             )
 
-            if update.callback_query:
-                await update.callback_query.edit_message_text(
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
+    def calculate_months(self) -> int:
+        """Calculate months in relationship"""
+        today = date.today()
+        months = (today.year - self.anniversary_date.year) * 12
+        months += today.month - self.anniversary_date.month
+        
+        if today.day < self.anniversary_date.day:
+            months -= 1
+            def get_next_monthly(self) -> date:
+        """Get next monthly anniversary date"""
+        today = date.today()
+        next_date = today.replace(day=self.anniversary_date.day)
+        
+        if today.day >= self.anniversary_date.day:
+            if next_date.month == 12:
+                next_date = next_date.replace(year=next_date.year + 1, month=1)
             else:
-                await update.message.reply_text(
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-
-        except Exception as e:
-            logger.error(f"Error showing menu: {e}")
-            await self.handle_error(update, "Ada masalah teknis sayang...")
+                next_date = next_date.replace(month=next_date.month + 1)
+        
+        return next_date
 
     def get_next_milestone(self, current_months: int) -> dict:
         """Get next relationship milestone"""
@@ -158,177 +141,194 @@ class RelationshipHandler:
                     'desc': milestone['desc'],
                     'remaining': milestone['months'] - current_months
                 }
-                
+        
         return {
             'desc': 'Road to Halal 💍',
             'remaining': '???'
         }
 
-    async def show_love_notes(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Tampilkan love notes templates"""
-        try:
-            keyboard = [
-                [
-                    InlineKeyboardButton("💝 Morning Love", callback_data="note_morning"),
-                    InlineKeyboardButton("🌙 Night Love", callback_data="note_night")
-                ],
-                [
-                    InlineKeyboardButton("💌 Random Sweet", callback_data="note_random"),
-                    InlineKeyboardButton("✨ Custom Note", callback_data="note_custom")
-                ],
-                [InlineKeyboardButton("🔙 Kembali", callback_data="relationship_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+    async def handle_love_notes(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle love notes menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("💝 Morning Love", callback_data="notes_morning"),
+                InlineKeyboardButton("🌙 Night Love", callback_data="notes_night")
+            ],
+            [
+                InlineKeyboardButton("💌 Sweet Message", callback_data="notes_sweet"),
+                InlineKeyboardButton("✨ Custom Note", callback_data="notes_custom")
+            ],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="relation_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            text = (
-                "*💌 LOVE NOTES*\n\n"
-                "Pilih jenis pesan cinta:\n\n"
-                "• Morning = Ucapan selamat pagi\n"
-                "• Night = Ucapan selamat malam\n"
-                "• Random = Random sweet messages\n"
-                "• Custom = Bikin pesan sendiri\n\n"
-                "_Tips: Kirim pesan di waktu yang tepat ya!_ 💕"
-            )
+        text = (
+            "*💌 LOVE NOTES*\n\n"
+            "Pilih jenis pesan:\n\n"
+            "1️⃣ Morning Love\n"
+            "• Ucapan selamat pagi\n"
+            "• Motivasi untuk dia\n\n"
+            "2️⃣ Night Love\n"
+            "• Ucapan selamat malam\n"
+            "• Sweet dreams message\n\n"
+            "3️⃣ Sweet Message\n"
+            "• Random love notes\n"
+            "• Kata-kata manis\n\n"
+            "4️⃣ Custom Note\n"
+            "• Bikin pesan sendiri\n"
+            "• Format bebas\n\n"
+            "_Tips: Kirim di waktu yang tepat!_ 💕"
+        )
 
-            await update.callback_query.edit_message_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-        except Exception as e:
-            logger.error(f"Error showing love notes: {e}")
-            await self.handle_error(update, "Gagal menampilkan love notes")
+    async def handle_quality_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle quality time menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("🎬 Movie Date", callback_data="quality_movie"),
+                InlineKeyboardButton("🍽️ Dinner Date", callback_data="quality_dinner")
+            ],
+            [
+                InlineKeyboardButton("🏃‍♂️ Active Date", callback_data="quality_active"),
+                InlineKeyboardButton("🏡 Home Date", callback_data="quality_home")
+            ],
+            [
+                InlineKeyboardButton("📅 Plan Custom", callback_data="quality_custom"),
+                InlineKeyboardButton("💌 Invite Her", callback_data="quality_invite")
+            ],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="relation_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    async def send_love_note(self, note_type: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Kirim love note ke WhatsApp"""
-        try:
-            message = random.choice(self.love_messages[note_type])
-            wa_link = f"https://wa.me/{self.girlfriend_phone}?text={message}"
+        text = (
+            "*💑 QUALITY TIME IDEAS*\n\n"
+            "*Budget Options:*\n"
+            "1️⃣ Movie Date (50-100k)\n"
+            "• Nonton bareng\n"
+            "• Snack & drinks\n\n"
+            "2️⃣ Dinner Date (150-200k)\n"
+            "• Makan malam romantis\n"
+            "• Cafe/resto kesukaan\n\n"
+            "3️⃣ Active Date (0-50k)\n"
+            "• Jalan/jogging bareng\n"
+            "• Piknik di taman\n\n"
+            "4️⃣ Home Date (50k)\n"
+            "• Masak bareng\n"
+            "• Movie marathon\n\n"
+            "_Tips: Planning > Spending_ 💕"
+        )
 
-            keyboard = [
-                [InlineKeyboardButton("💌 Kirim via WA", url=wa_link)],
-                [InlineKeyboardButton("🔄 Ganti Pesan", callback_data=f"note_{note_type}")],
-                [InlineKeyboardButton("🔙 Kembali", callback_data="love_notes")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-            text = (
-                "*💌 PREVIEW MESSAGE*\n\n"
-                f"{message}\n\n"
-                "_Klik tombol di bawah untuk kirim_ 💕"
-            )
+    async def handle_gift_ideas(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle gift ideas menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("💝 Budget < 100k", callback_data="gift_budget"),
+                InlineKeyboardButton("🎁 100k-500k", callback_data="gift_medium")
+            ],
+            [
+                InlineKeyboardButton("✨ Special > 500k", callback_data="gift_special"),
+                InlineKeyboardButton("💌 DIY Gifts", callback_data="gift_diy")
+            ],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="relation_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            await update.callback_query.edit_message_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
+        text = (
+            "*🎁 GIFT IDEAS*\n\n"
+            "*Budget Options:*\n\n"
+            "1️⃣ Budget (< 100k)\n"
+            "• Handmade card/letter\n"
+            "• Photo frame/album\n"
+            "• Small plushies\n\n"
+            "2️⃣ Medium (100-500k)\n"
+            "• Parfum kesukaannya\n"
+            "• Couple items\n"
+            "• Accessories\n\n"
+            "3️⃣ Special (> 500k)\n"
+            "• Birthday surprise\n"
+            "• Special dinner\n"
+            "• Branded items\n\n"
+            "4️⃣ DIY Gifts\n"
+            "• Scrapbook memories\n"
+            "• Handmade cookies\n"
+            "• Custom playlist\n\n"
+            "_Tips: Effort > Price_ 💝"
+        )
 
-        except Exception as e:
-            logger.error(f"Error sending love note: {e}")
-            await self.handle_error(update, "Gagal mengirim pesan")
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-    async def show_date_planner(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Tampilkan date planner"""
-        try:
-            keyboard = [
-                [
-                    InlineKeyboardButton("💝 Simple Date", callback_data="date_simple"),
-                    InlineKeyboardButton("✨ Special Date", callback_data="date_special")
-                ],
-                [
-                    InlineKeyboardButton("📅 Plan Custom", callback_data="date_custom"),
-                    InlineKeyboardButton("💌 Remind Her", callback_data="date_remind")
-                ],
-                [InlineKeyboardButton("🔙 Kembali", callback_data="relationship_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+    async def handle_reminder(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle reminders menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("🌅 Morning Call", callback_data="remind_morning"),
+                InlineKeyboardButton("🌙 Night Call", callback_data="remind_night")
+            ],
+            [
+                InlineKeyboardButton("💊 Medicine", callback_data="remind_medicine"),
+                InlineKeyboardButton("🍽️ Meals", callback_data="remind_meals")
+            ],
+            [
+                InlineKeyboardButton("📅 Important Dates", callback_data="remind_dates"),
+                InlineKeyboardButton("⚙️ Settings", callback_data="remind_settings")
+            ],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="relation_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Get random date idea
-            all_ideas = (
-                self.date_ideas['simple'] + 
-                self.date_ideas['medium'] + 
-                self.date_ideas['special']
-            )
-            suggestion = random.choice(all_ideas)
+        text = (
+            "*⏰ REMINDER SETTINGS*\n\n"
+            "*Current Reminders:*\n"
+            "• Morning Call: 06:00\n"
+            "• Night Call: 21:00\n"
+            "• Meals: 3x sehari\n"
+            "• Medicine: as needed\n\n"
+            "*Important Dates:*\n"
+            "• Monthly: 13\n"
+            "• Birthday: 16 Sep\n"
+            "• Anniversary: 13 Sep\n\n"
+            "_Pilih untuk edit reminder_ ⚙️"
+        )
 
-            text = (
-                "*📅 DATE PLANNER*\n\n"
-                "*Rekomendasi Date:*\n"
-                f"• {suggestion['name']}\n"
-                f"• {suggestion['desc']}\n"
-                f"• Budget: {suggestion['budget']}\n\n"
-                "*Pilih opsi di bawah untuk:*\n"
-                "• Lihat ide date simpel\n"
-                "• Rencana date spesial\n"
-                "• Bikin plan custom\n"
-                "• Ingetin dia untuk date\n\n"
-                "_Tips: Sesuaikan dengan waktu & budget_ 💕"
-            )
-
-            await update.callback_query.edit_message_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-
-        except Exception as e:
-            logger.error(f"Error showing date planner: {e}")
-            await self.handle_error(update, "Gagal menampilkan date planner")
-
-    def calculate_months(self) -> int:
-        """Hitung berapa bulan sudah pacaran"""
-        today = date.today()
-        months = (today.year - self.anniversary_date.year) * 12
-        months += today.month - self.anniversary_date.month
-        
-        if today.day < self.anniversary_date.day:
-            months -= 1
-            
-        return months
-
-    def get_next_monthly(self) -> date:
-        """Get tanggal monthly anniversary berikutnya"""
-        today = date.today()
-        next_date = today.replace(day=13)
-        
-        if today.day >= 13:
-            if next_date.month == 12:
-                next_date = next_date.replace(year=next_date.year + 1, month=1)
-            else:
-                next_date = next_date.replace(month=next_date.month + 1)
-                
-        return next_date
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
     async def handle_error(self, update: Update, message: str):
-        """Handle errors dengan cara yang sweet"""
+        """Handle errors"""
         error_text = (
-            f"❤️ {message}\n\n"
+            f"❌ {message}\n\n"
             "Coba:\n"
-            "1. Mulai dari /start\n"
-            "2. Pilih menu Status Pacaran lagi\n"
-            "3. Atau chat langsung aja ke dia 💝"
+            "1. Ketik /start\n"
+            "2. Pilih menu Relationship lagi\n"
+            "3. Atau tunggu beberapa saat"
         )
         
-        if update.callback_query:
-            await update.callback_query.message.reply_text(error_text)
-        else:
-            await update.message.reply_text(error_text)
-
-    def save_data(self):
-        """Save relationship data"""
         try:
-            with open('relationship_data.json', 'w') as f:
-                json.dump(self.couple_data, f)
+            if update.callback_query:
+                await update.callback_query.message.reply_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
         except Exception as e:
-            logger.error(f"Error saving data: {e}")
+            logger.error(f"Error in error handler: {e}")
 
-    def load_data(self):
-        """Load relationship data"""
-        try:
-            with open('relationship_data.json', 'r') as f:
-                self.couple_data = json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading data: {e}")
-            self.couple_data = {}
+    async def cleanup(self):
+        """Save data before shutdown"""
+        self.save_data()
