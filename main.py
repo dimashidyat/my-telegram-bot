@@ -159,7 +159,7 @@ class DimasBot:
 
             # Add fallback for unknown commands
             app.add_handler(MessageHandler(
-                filters.COMMAND & ~filters.COMMAND.filter("start"),
+                filters.COMMAND & (~filters.Regex("^/start$")),
                 self.unknown_command
             ))
 
