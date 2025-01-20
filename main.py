@@ -144,12 +144,7 @@ class DimasBot:
         """Run bot with persistence and error handling"""
         try:
             # Setup persistence
-            persistence = PicklePersistence(
-                filepath="bot_data",
-                store_bot_data=True,
-                store_user_data=True,
-                store_chat_data=True,
-            )
+            persistence = PicklePersistence(filepath="bot_data")
 
             # Create application
             app = Application.builder() \
