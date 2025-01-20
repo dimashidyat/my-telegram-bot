@@ -47,9 +47,11 @@ STUDY_MATERIALS = {
 PEMPEK_PRICES = {
     'kecil': 2500,
     'gede': 12000,
-    'standard_items': {
+    'items': {
         'air': 4000,
-        'gas': 22000
+        'gas': 22000,
+        'plastik': 2000,
+        'es': 3000
     }
 }
 
