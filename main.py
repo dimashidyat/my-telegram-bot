@@ -1,5 +1,6 @@
 import logging
 import traceback
+import json
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -25,85 +26,102 @@ class DimasBot:
     def __init__(self):
         self.menu_handlers = {}
         self.active_menus = {}
+        self.pempek_data = {}
+        self.prices = {
+            'kecil': 2500,
+            'gede': 12000,
+            'items': {
+                'air': 4000,
+                'gas': 22000,
+                'plastik': 2000,
+                'es': 3000
+            }
+        }
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Send main menu when /start command is issued"""
-        try:
-            keyboard = [
-                [
-                    InlineKeyboardButton("📝 Laporan Pempek", callback_data="menu_pempek"),
-                    InlineKeyboardButton("📚 BUMN Study", callback_data="menu_study")
-                ],
-                [
-                    InlineKeyboardButton("⏰ Jadwal", callback_data="menu_schedule"),
-                    InlineKeyboardButton("💪 Health", callback_data="menu_health")
-                ],
-                [InlineKeyboardButton("💕 Status Pacaran", callback_data="menu_relationship")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        """Send main menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📝 Laporan Pempek", callback_data="menu_pempek"),
+                InlineKeyboardButton("📚 BUMN Study", callback_data="menu_study")
+            ],
+            [
+                InlineKeyboardButton("⏰ Jadwal", callback_data="menu_schedule"),
+                InlineKeyboardButton("💪 Health", callback_data="menu_health")
+            ],
+            [InlineKeyboardButton("💕 Status Pacaran", callback_data="menu_relationship")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            text = (
-                "*🤖 SELAMAT DATANG DI DIMAS BOT!*\n\n"
-                "Bot ini akan membantu:\n"
-                "• 📝 Input laporan pempek\n"
-                "• 📚 Track belajar BUMN\n"
-                "• ⏰ Atur jadwal harian\n"
-                "• 💪 Monitor kesehatan\n"
-                "• 💕 Manage relationship\n\n"
-                "Pilih menu di bawah untuk mulai:"
+        text = (
+            "*🤖 SELAMAT DATANG DI DIMAS BOT!*\n\n"
+            "Bot ini akan membantu:\n"
+            "• 📝 Input laporan pempek\n"
+            "• 📚 Track belajar BUMN\n"
+            "• ⏰ Atur jadwal harian\n"
+            "• 💪 Monitor kesehatan\n"
+            "• 💕 Manage relationship\n\n"
+            "Pilih menu di bawah untuk mulai:"
+        )
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
             )
-
-            if update.callback_query:
-                await update.callback_query.edit_message_text(
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-
-        except Exception as e:
-            logger.error(f"Error in start command: {traceback.format_exc()}")
-            await self.handle_error(update, context)
+        else:
+            await update.message.reply_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle button callbacks"""
         try:
             query = update.callback_query
-            user_id = update.effective_user.id
-
-            # Always answer callback query
             await query.answer()
+            user_id = str(update.effective_user.id)
+            callback_data = query.data
 
-            # Check if returning to main menu
-            if query.data == "back_main":
+            # Main menu navigation
+            if callback_data == "back_main":
                 await self.start(update, context)
                 return
 
-            # Handle menu selection
-            if query.data.startswith("menu_"):
-                menu_type = query.data.split("_")[1]
+            # Menu selection
+            if callback_data.startswith("menu_"):
+                menu_type = callback_data.split("_")[1]
                 self.active_menus[user_id] = menu_type
                 
-                # Show appropriate menu
                 if menu_type == "pempek":
                     await self.show_pempek_menu(update, context)
                 elif menu_type == "study":
                     await self.show_study_menu(update, context)
-                # Add other menus here
                 return
 
-            # Handle sub-menu actions
-            current_menu = self.active_menus.get(user_id)
-            if current_menu == "pempek":
-                await self.handle_pempek_callback(query.data, update, context)
-            elif current_menu == "study":
-                await self.handle_study_callback(query.data, update, context)
-            # Add other sub-menu handlers
+            # Pempek menu handlers
+            if callback_data.startswith("pempek_"):
+                action = callback_data.split("_")[1]
+                if action == "modal":
+                    await self.show_modal_input(update, context)
+                elif action == "stock":
+                    await self.show_stock_input(update, context)
+                elif action == "setoran":
+                    await self.show_setoran_input(update, context)
+                elif action == "report":
+                    await self.show_pempek_report(update, context)
+                return
+
+            # Modal input handlers
+            if callback_data.startswith("modal_"):
+                item = callback_data.split("_")[1]
+                if item != "manual":
+                    await self.handle_modal_input(update, context, item)
+                else:
+                    await self.request_manual_modal(update, context)
+                return
 
         except Exception as e:
             logger.error(f"Error handling callback: {traceback.format_exc()}")
@@ -111,6 +129,7 @@ class DimasBot:
 
     async def show_pempek_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show pempek reporting menu"""
+        user_id = str(update.effective_user.id)
         keyboard = [
             [
                 InlineKeyboardButton("💰 Input Modal", callback_data="pempek_modal"),
@@ -124,14 +143,19 @@ class DimasBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        # Get status
+        has_modal = bool(self.pempek_data.get(user_id, {}).get('modal'))
+        has_stock = bool(self.pempek_data.get(user_id, {}).get('stock'))
+        has_setoran = bool(self.pempek_data.get(user_id, {}).get('setoran'))
+
         text = (
             "*📝 MENU LAPORAN PEMPEK*\n\n"
             f"Tanggal: {datetime.now().strftime('%d/%m/%Y')}\n\n"
-            "Pilih menu:\n"
-            "• Modal = Input pengeluaran\n"
-            "• Stock = Sisa dagangan\n"
-            "• Setoran = Total pendapatan\n"
-            "• Laporan = Ringkasan hari ini"
+            "Status:\n"
+            f"• Modal: {'✅' if has_modal else '❌'}\n"
+            f"• Stock: {'✅' if has_stock else '❌'}\n"
+            f"• Setoran: {'✅' if has_setoran else '❌'}\n\n"
+            "Pilih menu untuk input data:"
         )
 
         await update.callback_query.edit_message_text(
@@ -140,35 +164,30 @@ class DimasBot:
             parse_mode='Markdown'
         )
 
-    async def handle_pempek_callback(self, callback_data: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle pempek menu callbacks"""
-        # Add pempek menu callback handling
-        pass
-
-    async def show_study_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show study tracking menu"""
+    async def show_modal_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show modal input options"""
         keyboard = [
             [
-                InlineKeyboardButton("📚 TWK", callback_data="study_twk"),
-                InlineKeyboardButton("🧮 TIU", callback_data="study_tiu"),
-                InlineKeyboardButton("👥 TKP", callback_data="study_tkp")
+                InlineKeyboardButton("💧 Air (4.000)", callback_data="modal_air"),
+                InlineKeyboardButton("🔥 Gas (22.000)", callback_data="modal_gas")
             ],
             [
-                InlineKeyboardButton("⏱️ Timer", callback_data="study_timer"),
-                InlineKeyboardButton("📊 Progress", callback_data="study_progress")
+                InlineKeyboardButton("🛍️ Plastik (2.000)", callback_data="modal_plastik"),
+                InlineKeyboardButton("🧊 Es (3.000)", callback_data="modal_es")
             ],
-            [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
+            [
+                InlineKeyboardButton("✏️ Input Manual", callback_data="modal_manual"),
+                InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")
+            ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         text = (
-            "*📚 MENU BELAJAR BUMN*\n\n"
-            f"Tanggal: {datetime.now().strftime('%d/%m/%Y')}\n\n"
-            "Target Harian:\n"
-            "• TWK: 20 soal\n"
-            "• TIU: 15 soal\n"
-            "• TKP: 10 soal\n\n"
-            "Pilih menu untuk mulai!"
+            "*💰 INPUT MODAL HARIAN*\n\n"
+            "Pilih item atau input manual:\n\n"
+            "Format input manual:\n"
+            "item=harga (pisah pake koma)\n"
+            "Contoh: gorengan=10000,tissue=5000"
         )
 
         await update.callback_query.edit_message_text(
@@ -176,6 +195,81 @@ class DimasBot:
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
+
+    async def handle_modal_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, item: str):
+        """Process modal input"""
+        try:
+            user_id = str(update.effective_user.id)
+            
+            if user_id not in self.pempek_data:
+                self.pempek_data[user_id] = {}
+            
+            if 'modal' not in self.pempek_data[user_id]:
+                self.pempek_data[user_id]['modal'] = {}
+
+            price = self.prices['items'].get(item)
+            if price:
+                self.pempek_data[user_id]['modal'][item] = price
+                await update.callback_query.answer(
+                    f"✅ Ditambahkan: {item} = Rp{price:,}"
+                )
+                await self.show_pempek_menu(update, context)
+
+        except Exception as e:
+            logger.error(f"Error in modal input: {e}")
+            await self.handle_error(update, context)
+
+    async def request_manual_modal(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Request manual modal input"""
+        text = (
+            "*✏️ INPUT MODAL MANUAL*\n\n"
+            "Ketik dengan format:\n"
+            "`item=harga` (pisah pake koma)\n\n"
+            "Contoh:\n"
+            "`gorengan=10000,tissue=5000`\n\n"
+            "Ketik /cancel untuk batal"
+        )
+        
+        await update.callback_query.edit_message_text(
+            text=text,
+            parse_mode='Markdown'
+        )
+        
+        # Set user state to expect manual input
+        context.user_data['expecting_modal'] = True
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages"""
+        if not context.user_data.get('expecting_modal'):
+            return
+
+        text = update.message.text
+        if text == '/cancel':
+            context.user_data['expecting_modal'] = False
+            await self.show_pempek_menu(update, context)
+            return
+
+        try:
+            # Parse manual input
+            items = text.split(',')
+            user_id = str(update.effective_user.id)
+            
+            if user_id not in self.pempek_data:
+                self.pempek_data[user_id] = {'modal': {}}
+                
+            for item in items:
+                name, price = item.split('=')
+                self.pempek_data[user_id]['modal'][name.strip()] = int(price)
+            
+            await update.message.reply_text("✅ Modal berhasil disimpan!")
+            context.user_data['expecting_modal'] = False
+            
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ Format salah!\n"
+                "Gunakan: item=harga,item=harga\n"
+                "Contoh: gorengan=10000,tissue=5000"
+            )
 
     async def handle_error(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Error handler"""
@@ -204,6 +298,7 @@ class DimasBot:
             # Add handlers
             app.add_handler(CommandHandler("start", self.start))
             app.add_handler(CallbackQueryHandler(self.handle_callback))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
             
             # Add handler for unknown commands
             app.add_handler(MessageHandler(
