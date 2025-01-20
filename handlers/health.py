@@ -19,7 +19,7 @@ class HealthHandler:
                 InlineKeyboardButton("😴 Log Tidur", callback_data="health_sleep")
             ],
             [
-                InlineKeyboardButton("🏋️ Tips Olahraga", callback_data="health_tips"),
+                InlineKeyboardButton("🏋 Tips Olahraga", callback_data="health_tips"),
                 InlineKeyboardButton("📊 Progress", callback_data="health_progress")
             ]
         ]
@@ -34,4 +34,7 @@ class HealthHandler:
             "*Tips Simple:*\n"
             "• Push up tiap sholat\n"
             "• Jalan pas cari order\n"
-            "• Tidur max 
+            "• Tidur max 22:00\n",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
