@@ -1,0 +1,91 @@
+import os
+import json
+import logging
+from datetime import datetime
+from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
+
+class Storage:
+    def __init__(self, data_dir: str = "data"):
+        self.data_dir = data_dir
+        os.makedirs(data_dir, exist_ok=True)
+
+    def save_data(self, data: Dict[str, Any], filename: str) -> bool:
+        """Save data to JSON file"""
+        try:
+            filepath = os.path.join(self.data_dir, filename)
+            
+            # Create backup of existing file
+            if os.path.exists(filepath):
+                backup_name = f"{filename}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.backup"
+                backup_path = os.path.join(self.data_dir, backup_name)
+                os.rename(filepath, backup_path)
+            
+            # Save new data
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving {filename}: {e}")
+            return False
+
+    def load_data(self, filename: str) -> Dict[str, Any]:
+        """Load data from JSON file"""
+        try:
+            filepath = os.path.join(self.data_dir, filename)
+            
+            if os.path.exists(filepath):
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            
+            return {}
+            
+        except Exception as e:
+            logger.error(f"Error loading {filename}: {e}")
+            return {}
+
+    def backup_data(self, filename: str) -> bool:
+        """Create backup of data file"""
+        try:
+            filepath = os.path.join(self.data_dir, filename)
+            
+            if os.path.exists(filepath):
+                backup_name = f"{filename}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.backup"
+                backup_path = os.path.join(self.data_dir, backup_name)
+                
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error backing up {filename}: {e}")
+            return False
+
+    def cleanup_backups(self, max_backups: int = 5):
+        """Remove old backup files keeping only max_backups latest"""
+        try:
+            # Get all backup files
+            backup_files = []
+            for filename in os.listdir(self.data_dir):
+                if filename.endswith('.backup'):
+                    filepath = os.path.join(self.data_dir, filename)
+                    backup_files.append((filepath, os.path.getctime(filepath)))
+            
+            # Sort by creation time (newest first)
+            backup_files.sort(key=lambda x: x[1], reverse=True)
+            
+            # Remove old backups
+            for filepath, _ in backup_files[max_backups:]:
+                os.remove(filepath)
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up backups: {e}") 
