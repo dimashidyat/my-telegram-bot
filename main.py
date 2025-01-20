@@ -1,119 +1,312 @@
-from telegram import Update, ParseMode
-from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor
-import datetime
+import os
+import logging
+import asyncio
+from datetime import datetime, time, date
 import random
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters
+)
 
-# Token dan Chat ID
-TOKEN = "7092522264:AAHsi2KM-8D8XcfIg09vptDyHiB28lRKQJY"
-CHAT_ID = "2031898002"
-PHONE_NUMBER = "+6281776633344"
-CHANNEL_URL = "https://t.me/latihansoalbumn2025"
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Data Penyimpanan
-data_log = {"pengeluaran": [], "pemasukan": [], "aktivitas": []}
-motivasi_list = [
-    "Kegagalan adalah jalan menuju kesuksesan.",
-    "Jangan pernah menyerah, sukses sudah menunggu di depan!",
-    "Kamu lebih kuat dari apa yang kamu pikirkan.",
-]
+# States
+(CHOOSING, TYPING_REPORT, TYPING_STUDY, TYPING_HEALTH,
+ TYPING_SPIRITUAL, VIEWING_STATS) = range(6)
 
-# Fungsi Log Aktivitas
-def log(update: Update, context: CallbackContext):
-    try:
-        kategori = context.args[0].lower()
-        deskripsi = " ".join(context.args[1:])
-        waktu = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if kategori == "minyak" and deskripsi not in ["masih", "habis"]:
-            raise ValueError
-        data_log["aktivitas"].append({"kategori": kategori, "deskripsi": deskripsi, "waktu": waktu})
-        update.message.reply_text(f"Log aktivitas '{kategori}' berhasil disimpan dengan status '{deskripsi}'.")
-    except:
-        update.message.reply_text("Format salah! Gunakan: /log <kategori> <deskripsi>\n\nContoh untuk minyak: /log minyak habis")
+class LifeManagementBot:
+    def __init__(self):
+        # Bot credentials
+        self.TOKEN = "7092522264:AAHsi2KM-8D8XcfIg09vptDyHiB28lRKQJY"
+        self.CHAT_ID = "2031898002"
+        
+        # Personal data
+        self.GIRLFRIEND_PHONE = "6281513607410"
+        self.MY_PHONE = "6281776633344"
+        self.ANNIVERSARY_DATE = date(2021, 9, 13)
+        
+        # Storage
+        self.reports = {}
+        
+        # Prayer times
+        self.prayer_times = {
+            'Subuh': time(4, 30),
+            'Dzuhur': time(12, 0),
+            'Ashar': time(15, 30),
+            'Maghrib': time(18, 0),
+            'Isya': time(19, 30)
+        }
 
-# Fungsi Statistik Harian
-def statistik(update: Update, context: CallbackContext):
-    aktivitas = "\n".join(
-        [f"{i+1}. [{a['kategori']}] {a['deskripsi']} - {a['waktu']}" for i, a in enumerate(data_log["aktivitas"])]
-    )
-    total_pengeluaran = sum(p["jumlah"] for p in data_log["pengeluaran"])
-    total_pemasukan = sum(p["jumlah"] for p in data_log["pemasukan"])
-    update.message.reply_text(
-        f"""📊 *Statistik Harian:*
-- Total Pengeluaran: Rp. {total_pengeluaran:,}
-- Total Pemasukan: Rp. {total_pemasukan:,}
-
-📝 *Log Aktivitas:*
-{aktivitas if aktivitas else "Tidak ada aktivitas tercatat."}
-        """,
-        parse_mode=ParseMode.MARKDOWN,
-    )
-
-# Fungsi Latihan Soal BUMN
-def soal_bumn(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        f"📚 Soal latihan terbaru dapat diakses melalui channel berikut:\n{CHANNEL_URL}",
-        parse_mode=ParseMode.MARKDOWN,
-    )
-
-# Fungsi Motivasi Harian
-def motivasi(update: Update, context: CallbackContext):
-    update.message.reply_text(random.choice(motivasi_list))
-
-# Fungsi Auto Reminder
-def auto_reminder(context: CallbackContext):
-    pesan = f"⏰ Selamat pagi! Jangan lupa lakukan hal produktif hari ini. Semangat 💪\nHubungi saya di WhatsApp {PHONE_NUMBER} jika ada pertanyaan."
-    context.bot.send_message(chat_id=CHAT_ID, text=pesan)
-
-# Fungsi Pomodoro Timer
-def pomodoro(update: Update, context: CallbackContext):
-    try:
-        waktu = int(context.args[0])  # Waktu dalam menit
-        context.job_queue.run_once(
-            pomodoro_selesai, waktu * 60, context=update.message.chat_id, name=str(update.message.chat_id)
+    async def setup_daily_reminders(self, application):
+        """Setup all daily reminders."""
+        # Morning message (5 AM)
+        application.job_queue.run_daily(
+            self.send_morning_message,
+            time=time(5, 0),
+            chat_id=self.CHAT_ID,
+            name='morning_message'
         )
-        update.message.reply_text(f"⏳ Pomodoro dimulai: {waktu} menit.")
-    except:
-        update.message.reply_text("Format salah! Gunakan: /pomodoro <waktu (menit)>")
+        
+        # Prayer reminders
+        for prayer, prayer_time in self.prayer_times.items():
+            application.job_queue.run_daily(
+                self.send_prayer_reminder,
+                time=prayer_time,
+                chat_id=self.CHAT_ID,
+                name=f'prayer_{prayer.lower()}',
+                data={'prayer': prayer}
+            )
+        
+        # Anniversary check (00:00)
+        application.job_queue.run_daily(
+            self.check_anniversary,
+            time=time(0, 0),
+            chat_id=self.CHAT_ID,
+            name='anniversary_check'
+        )
+        
+        # Pempek report reminder (21:00)
+        application.job_queue.run_daily(
+            self.send_report_reminder,
+            time=time(21, 0),
+            chat_id=self.CHAT_ID,
+            name='pempek_report'
+        )
+        
+        # Study reminder (09:00)
+        application.job_queue.run_daily(
+            self.send_study_reminder,
+            time=time(9, 0),
+            chat_id=self.CHAT_ID,
+            name='study_reminder'
+        )
 
-def pomodoro_selesai(context: CallbackContext):
-    context.bot.send_message(chat_id=context.job.context, text="⏰ Pomodoro selesai! Waktunya istirahat.")
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Start command handler."""
+        keyboard = [
+            ['📝 Laporan Pempek', '📚 Study Log'],
+            ['🕌 Spiritual', '💪 Health'],
+            ['💕 Status Anniversary', '📊 Statistics'],
+            ['⏰ Reminders', '❓ Help']
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            'Assalamualaikum! 🌟\n\n'
+            'Selamat datang di Bot Management.\n'
+            'Pilih menu yang kamu butuhkan:',
+            reply_markup=reply_markup
+        )
+        return CHOOSING
 
-# Fungsi Start
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "Selamat datang di bot manajemen harian!\n\n"
-        "📝 *Fitur Bot:*\n"
-        "- /log <kategori> <deskripsi>: Tambah log aktivitas.\n"
-        "- /statistik: Lihat statistik log harian.\n"
-        "- /soal_bumn: Lihat soal latihan terbaru dari channel BUMN.\n"
-        "- /motivasi: Dapatkan motivasi harian.\n"
-        "- /pomodoro <waktu>: Timer belajar fokus.\n\n"
-        "💡 Jangan lupa tetap produktif ya!"
-    )
+    async def pempek_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle pempek report menu."""
+        template = """
+*Format Laporan Pempek*
 
-# Main Function
-def main():
-    # Menjalankan bot
-    updater = Updater(TOKEN)
-    dp = updater.dispatcher
+1. *Pengeluaran*
+Format: Item: jumlah
+Contoh:
+Air: 4000
+Gas: 22000
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("log", log))
-    dp.add_handler(CommandHandler("statistik", statistik))
-    dp.add_handler(CommandHandler("soal_bumn", soal_bumn))
-    dp.add_handler(CommandHandler("motivasi", motivasi))
-    dp.add_handler(CommandHandler("pomodoro", pomodoro))
+2. *Sisa*
+a. Kecil: jumlah (x2.500)
+b. Gede: jumlah (x12.000)
 
-    # Scheduler untuk Auto Reminder
-    scheduler = BackgroundScheduler(executors={"default": ThreadPoolExecutor(10)})
-    scheduler.add_job(auto_reminder, "cron", hour=5, minute=0, args=[updater.bot])
-    scheduler.start()
+3. *Setoran*
+QRIS: jumlah
+Cash: jumlah
 
-    updater.start_polling()
-    updater.idle()
+4. *Sisa Plastik*
+a. 1/4: Br=jumlah, Bs=jumlah
+b. 1/2: Br=jumlah, Bs=jumlah
+c. 1: Br=jumlah, Bs=jumlah
+d. Kantong: Br=jumlah, Bs=jumlah
 
+5. *Status Minyak*
+(abis/masih)
 
-if __name__ == "__main__":
-    main()
+Ketik laporan sesuai format di atas.
+"""
+        await update.message.reply_text(
+            template,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return TYPING_REPORT
+
+    async def handle_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle pempek report submission."""
+        report_text = update.message.text
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        self.reports[date_str] = report_text
+        
+        await update.message.reply_text(
+            "✅ Laporan berhasil disimpan!\n\n"
+            "Ketik /start untuk kembali ke menu utama."
+        )
+        return ConversationHandler.END
+
+    async def send_morning_message(self, context: ContextTypes.DEFAULT_TYPE):
+        """Send morning love message."""
+        messages = [
+            "Pagi sayang 💕\nSemoga hari ini penuh berkah ya.\nJangan lupa sarapan!\n\nLove you 😘",
+            "Good morning my love 💝\nSelalu semangat ya hari ini.\nAku selalu mendukungmu!\n\nI love you 💑",
+            "Selamat pagi cintaku 💖\nSemoga harimu menyenangkan.\nJaga kesehatan ya!\n\nLove you always 🥰"
+        ]
+        message = random.choice(messages)
+        keyboard = [
+            [InlineKeyboardButton("💌 Balas Pesan", url=f"https://wa.me/{self.GIRLFRIEND_PHONE}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        try:
+            await context.bot.send_message(
+                chat_id=self.CHAT_ID,
+                text=message,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error sending morning message: {e}")
+
+    async def send_prayer_reminder(self, context: ContextTypes.DEFAULT_TYPE):
+        """Send prayer reminder."""
+        prayer = context.job.data['prayer']
+        await context.bot.send_message(
+            chat_id=context.job.chat_id,
+            text=f"🕌 Waktu {prayer} telah tiba!\n\nJangan lupa sholat ya..."
+        )
+
+    async def check_anniversary(self, context: ContextTypes.DEFAULT_TYPE):
+        """Check and send anniversary reminder."""
+        today = date.today()
+        if today.day == 13:
+            months = self.calculate_months()
+            message = f"""
+🎉 *Happy {months} Month Anniversary!* 🎉
+
+Alhamdulillah sudah {months} bulan kita jalani bersama.
+Semoga kita bisa terus bersama sampai halal ya sayang.
+
+I love you so much! 💑
+            """
+            keyboard = [
+                [InlineKeyboardButton("💝 Chat Sayang", url=f"https://wa.me/{self.GIRLFRIEND_PHONE}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=self.CHAT_ID,
+                    text=message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                logger.error(f"Error sending anniversary message: {e}")
+
+    async def send_report_reminder(self, context: ContextTypes.DEFAULT_TYPE):
+        """Send reminder for pempek report."""
+        await context.bot.send_message(
+            chat_id=self.CHAT_ID,
+            text="🔔 Reminder!\n\nJangan lupa buat laporan pempek hari ini ya!"
+        )
+
+    async def send_study_reminder(self, context: ContextTypes.DEFAULT_TYPE):
+        """Send reminder for studying."""
+        await context.bot.send_message(
+            chat_id=self.CHAT_ID,
+            text="📚 Study Time!\n\nWaktunya belajar dan persiapan BULOG!"
+        )
+
+    def calculate_months(self) -> int:
+        """Calculate months since anniversary date."""
+        today = date.today()
+        months = (today.year - self.ANNIVERSARY_DATE.year) * 12 + (today.month - self.ANNIVERSARY_DATE.month)
+        if today.day < self.ANNIVERSARY_DATE.day:
+            months -= 1
+        return months
+
+    async def show_anniversary_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show anniversary status."""
+        months = self.calculate_months()
+        next_date = date.today().replace(day=13)
+        if date.today().day > 13:
+            if next_date.month == 12:
+                next_date = next_date.replace(year=next_date.year + 1, month=1)
+            else:
+                next_date = next_date.replace(month=next_date.month + 1)
+        
+        days_until = (next_date - date.today()).days
+        
+        message = (
+            f"💑 *Status Anniversary*\n\n"
+            f"• Mulai pacaran: 13 September 2021\n"
+            f"• Sudah berjalan: {months} bulan\n"
+            f"• Anniversary berikutnya: {next_date.strftime('%d %B %Y')}\n"
+            f"• Sisa hari: {days_until} hari lagi\n\n"
+            f"_Semoga kita bisa terus bersama ya sayang_ 💕"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("💝 Chat Sayang", url=f"https://wa.me/{self.GIRLFRIEND_PHONE}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            message,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return CHOOSING
+
+    def run(self):
+        """Run the bot."""
+        try:
+            # Create application
+            application = ApplicationBuilder().token(self.TOKEN).build()
+
+            # Setup reminders
+            asyncio.get_event_loop().run_until_complete(
+                self.setup_daily_reminders(application)
+            )
+
+            # Add conversation handler
+            conv_handler = ConversationHandler(
+                entry_points=[CommandHandler('start', self.start)],
+                states={
+                    CHOOSING: [
+                        MessageHandler(filters.Regex('^📝 Laporan Pempek$'), self.pempek_menu),
+                        MessageHandler(filters.Regex('^💕 Status Anniversary$'), self.show_anniversary_status),
+                    ],
+                    TYPING_REPORT: [
+                        MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_report)
+                    ],
+                },
+                fallbacks=[CommandHandler('start', self.start)]
+            )
+
+            application.add_handler(conv_handler)
+            
+            # Start bot
+            print("Bot started successfully!")
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            
+        except Exception as e:
+            logger.error(f"Error running bot: {e}")
+            raise e
+
+if __name__ == '__main__':
+    bot = LifeManagementBot()
+    bot.run()
