@@ -1,115 +1,115 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 import logging
-from config import DEFAULT_SCHEDULE
+import json
+import os
+from config import JADWAL
 
 logger = logging.getLogger(__name__)
 
 class ScheduleHandler:
     def __init__(self):
-        self.schedules = {}  # Untuk menyimpan jadwal custom per user
-        self.reminders = {}  # Untuk menyimpan reminder aktif
-        self.default_schedule = DEFAULT_SCHEDULE
+        self.data = {}
+        self.jadwal = JADWAL
+        self.active_reminders = {}
+        
+        # Load existing data
+        self.load_data()
+
+    def load_data(self):
+        """Load schedule data"""
+        try:
+            if os.path.exists('data/schedule_data.json'):
+                with open('data/schedule_data.json', 'r') as f:
+                    self.data = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading schedule data: {e}")
+
+    def save_data(self):
+        """Save schedule data"""
+        try:
+            os.makedirs('data', exist_ok=True)
+            with open('data/schedule_data.json', 'w') as f:
+                json.dump(self.data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving schedule data: {e}")
 
     async def show_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Tampilkan menu jadwal"""
-        try:
-            user_id = update.effective_user.id
-            now = datetime.now()
-            current_time = now.time()
+        """Show schedule menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📅 Jadwal Hari Ini", callback_data="schedule_today"),
+                InlineKeyboardButton("⚙️ Edit Jadwal", callback_data="schedule_edit")
+            ],
+            [
+                InlineKeyboardButton("⏰ Set Reminder", callback_data="schedule_reminder"),
+                InlineKeyboardButton("📊 Progress", callback_data="schedule_progress")
+            ],
+            [
+                InlineKeyboardButton("📝 Catatan", callback_data="schedule_notes"),
+                InlineKeyboardButton("🔄 Reset", callback_data="schedule_reset")
+            ],
+            [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Initialize user schedule if needed
-            if user_id not in self.schedules:
-                self.schedules[user_id] = self.default_schedule.copy()
+        # Get next activity
+        next_activity = self.get_next_activity()
 
-            keyboard = [
-                [
-                    InlineKeyboardButton("📅 Lihat Jadwal", callback_data="schedule_view"),
-                    InlineKeyboardButton("⚙️ Edit Jadwal", callback_data="schedule_edit")
-                ],
-                [
-                    InlineKeyboardButton("⏰ Set Reminder", callback_data="schedule_reminder"),
-                    InlineKeyboardButton("📊 Progress", callback_data="schedule_progress")
-                ],
-                [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        text = (
+            "*📅 JADWAL HARIAN*\n\n"
+            f"🕐 Sekarang: {datetime.now().strftime('%H:%M')}\n"
+            f"📍 Next: {next_activity['name']} ({next_activity['time']})\n\n"
+            "*Jadwal Utama:*\n"
+            "• 04.45 - Sholat Subuh\n"
+            "• 07.00 - Maxim\n"
+            "• 10.00 - Study BULOG\n"
+            "• 12.00 - Dzuhur + Break\n"
+            "• 15.00 - Ashar\n"
+            "• 18.00 - Maghrib\n"
+            "• 19.00 - Isya\n"
+            "• 21.00 - Report Pempek\n"
+            "• 22.00 - Sleep\n\n"
+            "_Tips: Set reminder untuk kegiatan penting_"
+        )
 
-            # Get next activity
-            next_activity = self.get_next_activity(user_id)
-
-            text = (
-                "*⏰ JADWAL HARIAN*\n\n"
-                f"🕐 Sekarang: {now.strftime('%H:%M')}\n"
-            )
-
-            if next_activity:
-                activity, act_time = next_activity
-                text += f"📍 Next: {activity} ({act_time.strftime('%H:%M')})\n"
-            
-            text += "\n*Quick Menu:*\n• Lihat jadwal lengkap\n• Edit waktu aktivitas\n• Set pengingat baru"
-
-            if update.callback_query:
-                await update.callback_query.edit_message_text(
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-
-        except Exception as e:
-            logger.error(f"Error in show_menu: {e}")
-            await self.handle_error(update, "Gagal menampilkan menu jadwal")
-
-    async def view_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Tampilkan jadwal lengkap"""
-        try:
-            user_id = update.effective_user.id
-            schedule = self.schedules.get(user_id, self.default_schedule)
-            
-            text = "*📅 JADWAL LENGKAP*\n\n"
-            
-            # Morning schedule
-            text += "*Pagi:*\n"
-            for activity, act_time in schedule['pagi'].items():
-                text += f"• {act_time.strftime('%H:%M')} - {self.get_activity_name(activity)}\n"
-            
-            # Afternoon schedule
-            text += "\n*Siang:*\n"
-            for activity, act_time in schedule['siang'].items():
-                text += f"• {act_time.strftime('%H:%M')} - {self.get_activity_name(activity)}\n"
-            
-            # Night schedule
-            text += "\n*Malam:*\n"
-            for activity, act_time in schedule['malam'].items():
-                text += f"• {act_time.strftime('%H:%M')} - {self.get_activity_name(activity)}\n"
-
-            keyboard = [
-                [
-                    InlineKeyboardButton("⚙️ Edit Jadwal", callback_data="schedule_edit"),
-                    InlineKeyboardButton("⏰ Set Reminder", callback_data="schedule_reminder")
-                ],
-                [InlineKeyboardButton("🔙 Kembali", callback_data="schedule_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
+        if update.callback_query:
             await update.callback_query.edit_message_text(
                 text=text,
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
+        else:
+            await update.message.reply_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
 
-        except Exception as e:
-            logger.error(f"Error viewing schedule: {e}")
-            await self.handle_error(update, "Gagal menampilkan jadwal")
+    def get_next_activity(self) -> dict:
+        """Get next scheduled activity"""
+        now = datetime.now()
+        current_time = now.time()
+        
+        # Check each period
+        periods = ['pagi', 'siang', 'malam']
+        for period in periods:
+            for activity, activity_time in self.jadwal[period].items():
+                if activity_time > current_time:
+                    return {
+                        'name': self.get_activity_name(activity),
+                        'time': activity_time.strftime('%H:%M')
+                    }
+        
+        # If no next activity today, return first activity tomorrow
+        first_activity = list(self.jadwal['pagi'].items())[0]
+        return {
+            'name': self.get_activity_name(first_activity[0]),
+            'time': f"Tomorrow {first_activity[1].strftime('%H:%M')}"
+        }
 
-    def get_activity_name(self, activity_key: str) -> str:
+    def get_activity_name(self, activity: str) -> str:
         """Convert activity key to readable name"""
         names = {
             'subuh': 'Sholat Subuh',
@@ -123,87 +123,62 @@ class ScheduleHandler:
             'pempek_report': 'Laporan Pempek',
             'sleep': 'Tidur'
         }
-        return names.get(activity_key, activity_key.title())
+        return names.get(activity, activity.title())
 
-    def get_next_activity(self, user_id: int) -> tuple:
-        """Get next scheduled activity"""
-        try:
-            schedule = self.schedules.get(user_id, self.default_schedule)
-            now = datetime.now().time()
-            
-            # Flatten schedule
-            all_activities = []
-            for period in ['pagi', 'siang', 'malam']:
-                for activity, act_time in schedule[period].items():
-                    if act_time > now:
-                        all_activities.append((activity, act_time))
-            
-            if all_activities:
-                return min(all_activities, key=lambda x: x[1])
-            return None
-
-        except Exception as e:
-            logger.error(f"Error getting next activity: {e}")
-            return None
-
-    async def set_reminder(self, update: Update, context: ContextTypes.DEFAULT_TYPE, activity: str, remind_time: time):
+    async def set_reminder(self, update: Update, context: ContextTypes.DEFAULT_TYPE, activity: str):
         """Set reminder for activity"""
-        try:
-            user_id = update.effective_user.id
-            chat_id = update.effective_chat.id
-            
-            # Calculate delay until reminder
-            now = datetime.now()
-            remind_datetime = datetime.combine(now.date(), remind_time)
-            
-            if remind_datetime < now:
-                remind_datetime += timedelta(days=1)
-            
-            delay = (remind_datetime - now).total_seconds()
-            
-            # Schedule reminder
-            context.job_queue.run_once(
-                self.send_reminder,
-                delay,
-                context={
-                    'user_id': user_id,
-                    'chat_id': chat_id,
-                    'activity': activity
-                },
-                name=f"reminder_{user_id}_{activity}"
-            )
-            
-            await update.callback_query.answer(f"Reminder set for {activity} at {remind_time.strftime('%H:%M')}")
+        user_id = str(update.effective_user.id)
+        chat_id = update.effective_chat.id
 
-        except Exception as e:
-            logger.error(f"Error setting reminder: {e}")
-            await self.handle_error(update, "Gagal mengatur reminder")
+        # Find activity time
+        activity_time = None
+        for period in self.jadwal.values():
+            if activity in period:
+                activity_time = period[activity]
+                break
 
-    async def send_reminder(self, context):
-        """Send reminder notification"""
-        try:
-            job = context.job
-            activity = job.context['activity']
-            chat_id = job.context['chat_id']
-            
-            remind_text = (
-                f"⏰ *REMINDER!*\n\n"
-                f"Waktunya {self.get_activity_name(activity)}!\n"
-                "Jangan lupa ya..."
-            )
-            
-            keyboard = [[InlineKeyboardButton("✅ Done", callback_data=f"remind_done_{activity}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=remind_text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
+        if not activity_time:
+            await update.callback_query.answer("❌ Invalid activity!")
+            return
 
-        except Exception as e:
-            logger.error(f"Error sending reminder: {e}")
+        # Schedule reminder
+        job_name = f"reminder_{user_id}_{activity}"
+        context.job_queue.run_daily(
+            self.send_reminder,
+            activity_time,
+            days=(0, 1, 2, 3, 4, 5, 6),
+            data={
+                'activity': activity,
+                'user_id': user_id
+            },
+            name=job_name,
+            chat_id=chat_id
+        )
+
+        # Save to active reminders
+        self.active_reminders[f"{user_id}_{activity}"] = {
+            'activity': activity,
+            'time': activity_time.strftime('%H:%M')
+        }
+
+        await update.callback_query.answer(f"✅ Reminder set for {activity} at {activity_time.strftime('%H:%M')}")
+
+    async def send_reminder(self, context: ContextTypes.DEFAULT_TYPE):
+        """Send reminder message"""
+        job = context.job
+        activity = job.data['activity']
+        
+        message = (
+            f"⏰ *REMINDER: {self.get_activity_name(activity)}*\n\n"
+            f"Waktunya {self.get_activity_name(activity)}!\n"
+            "_Klik_ /done _jika sudah selesai_"
+        )
+
+        await context.bot.send_message(
+            chat_id=job.chat_id,
+            text=message,
+            parse_mode='Markdown'
+        )
 
     async def handle_error(self, update: Update, message: str):
         """Handle errors"""
@@ -211,10 +186,18 @@ class ScheduleHandler:
             f"❌ {message}\n\n"
             "Coba:\n"
             "1. Ketik /start\n"
-            "2. Pilih menu Jadwal lagi"
+            "2. Pilih menu Schedule lagi\n"
+            "3. Atau tunggu beberapa saat"
         )
         
-        if update.callback_query:
-            await update.callback_query.message.reply_text(error_text)
-        else:
-            await update.message.reply_text(error_text)
+        try:
+            if update.callback_query:
+                await update.callback_query.message.reply_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
+        except Exception as e:
+            logger.error(f"Error in error handler: {e}")
+
+    async def cleanup(self):
+        """Save data before shutdown"""
+        self.save_data()
