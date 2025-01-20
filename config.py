@@ -17,7 +17,7 @@ CHANNELS = {
 }
 
 # Schedule Settings
-DEFAULT_SCHEDULE = {
+JADWAL = {
     'pagi': {
         'subuh': time(4, 45),
         'maxim': time(7, 0),
@@ -43,9 +43,19 @@ STUDY_MATERIALS = {
     'TKP': ['Karakteristik Pribadi', 'Integritas']
 }
 
-# Main Goals
-DAILY_GOALS = {
-    'study': {'target': 2, 'unit': 'jam'},
-    'maxim': {'target': 50000, 'unit': 'rupiah'},
-    'sleep': {'target': 6, 'unit': 'jam'}
+# Prices
+PEMPEK_PRICES = {
+    'kecil': 2500,
+    'gede': 12000,
+    'standard_items': {
+        'air': 4000,
+        'gas': 22000
+    }
+}
+
+# Health Goals
+HEALTH_GOALS = {
+    'workout': {'target': 30, 'unit': 'menit'},
+    'sleep': {'target': 6, 'unit': 'jam'},
+    'water': {'target': 2, 'unit': 'liter'}
 }
