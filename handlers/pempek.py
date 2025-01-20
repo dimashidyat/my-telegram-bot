@@ -1,73 +1,47 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
 import json
 from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
 from config import PEMPEK_PRICES
 
 logger = logging.getLogger(__name__)
 
 class PempekHandler:
     def __init__(self):
-        self.daily_data = {}
-        self.default_prices = PEMPEK_PRICES
-
-    async def setup_handlers(self, application: Application):
-        """Setup all handlers"""
-        application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, 
-            self.handle_message
-        ))
-
-    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle pempek menu callbacks"""
-        query = update.callback_query
-        
-        if query.data == "pempek_menu":
-            await self.show_menu(update, context)
-        elif query.data == "pempek_modal":
-            await self.input_modal(update, context)
-        elif query.data == "pempek_stock":
-            await self.input_stock(update, context)
-        elif query.data == "pempek_setoran":
-            await self.input_setoran(update, context)
-        elif query.data == "pempek_report":
-            await self.generate_report(update, context)
-        elif query.data.startswith("modal_"):
-            item = query.data.split("_")[1]
-            await self.handle_modal_input(update, item)
+        self.data = {}
+        self.prices = PEMPEK_PRICES
 
     async def show_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show main pempek menu"""
+        user_id = str(update.effective_user.id)
         keyboard = [
             [
-                InlineKeyboardButton("💰 Input Modal", callback_data="pempek_modal"),
-                InlineKeyboardButton("📦 Sisa Stock", callback_data="pempek_stock")
+                InlineKeyboardButton("💰 Pengeluaran", callback_data="pempek_pengeluaran"),
+                InlineKeyboardButton("📦 Stok", callback_data="pempek_stok")
             ],
             [
-                InlineKeyboardButton("💳 Input Setoran", callback_data="pempek_setoran"),
-                InlineKeyboardButton("📊 Laporan", callback_data="pempek_report")
+                InlineKeyboardButton("💵 Pemasukan", callback_data="pempek_pemasukan"),
+                InlineKeyboardButton("📊 Laporan", callback_data="pempek_laporan")
             ],
             [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        user_id = str(update.effective_user.id)
-        status = self.get_input_status(user_id)
-
+        # Check status
+        status = self.get_status(user_id)
+        
         text = (
-            "*📝 MENU LAPORAN PEMPEK*\n\n"
-            "*Status Input:*\n"
-            f"• Modal: {status['modal']}\n"
-            f"• Stock: {status['stock']}\n"
-            f"• Setoran: {status['setoran']}\n\n"
-            "*Tips:*\n"
-            "• Input modal = pengeluaran hari ini\n"
-            "• Stock = sisa dagangan (kecil/gede)\n"
-            "• Setoran = total QRIS + cash"
+            "*📝 LAPORAN PEMPEK*\n\n"
+            f"📅 Tanggal: {datetime.now().strftime('%d/%m/%Y')}\n\n"
+            "Status Input:\n"
+            f"• Pengeluaran: {status['pengeluaran']}\n"
+            f"• Stok: {status['stok']}\n" 
+            f"• Pemasukan: {status['pemasukan']}\n\n"
+            "Pilih menu untuk mulai:"
         )
 
-        if hasattr(update, 'callback_query') and update.callback_query:
+        if update.callback_query:
             await update.callback_query.edit_message_text(
                 text=text,
                 reply_markup=reply_markup,
@@ -80,29 +54,47 @@ class PempekHandler:
                 parse_mode='Markdown'
             )
 
-    async def input_modal(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle modal input interface"""
+    async def handle_callback(self, callback_data: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle pempek menu callbacks"""
+        user_id = str(update.effective_user.id)
+        action = callback_data.split('_')[1]
+
+        handlers = {
+            'pengeluaran': self.show_pengeluaran_menu,
+            'stok': self.show_stok_menu,
+            'pemasukan': self.show_pemasukan_menu,
+            'laporan': self.show_laporan
+        }
+
+        if action in handlers:
+            await handlers[action](update, context)
+        elif callback_data.startswith('input_'):
+            await self.handle_input(update, context, callback_data)
+
+    async def show_pengeluaran_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show pengeluaran input menu"""
         keyboard = [
             [
-                InlineKeyboardButton("💧 Air (4.000)", callback_data="modal_air"),
-                InlineKeyboardButton("🔥 Gas (22.000)", callback_data="modal_gas")
+                InlineKeyboardButton("💧 Air Galon (4.000)", callback_data="input_air"),
+                InlineKeyboardButton("🔥 Gas (22.000)", callback_data="input_gas")
             ],
             [
-                InlineKeyboardButton("🛍️ Input Manual", callback_data="modal_manual"),
-                InlineKeyboardButton("🔙 Kembali", callback_data="pempek_menu")
+                InlineKeyboardButton("🛍️ Plastik (2.000)", callback_data="input_plastik"),
+                InlineKeyboardButton("🧊 Es Batu (3.000)", callback_data="input_es")
+            ],
+            [
+                InlineKeyboardButton("✏️ Input Manual", callback_data="input_manual"),
+                InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         text = (
-            "*💰 INPUT MODAL*\n\n"
+            "*💰 INPUT PENGELUARAN*\n\n"
             "Pilih item atau input manual:\n\n"
-            "*Standard Items:*\n"
-            "• Air = Rp4.000\n"
-            "• Gas = Rp22.000\n\n"
-            "*Format Manual:*\n"
-            "Ketik: item=harga (pisah pake koma)\n"
-            "Contoh: plastik=5000, es=3000"
+            "Format input manual:\n"
+            "item=jumlah=harga\n"
+            "Contoh: plastik=2=4000"
         )
 
         await update.callback_query.edit_message_text(
@@ -111,34 +103,52 @@ class PempekHandler:
             parse_mode='Markdown'
         )
 
-    def get_input_status(self, user_id: str) -> dict:
-        """Get current input status"""
-        if user_id not in self.daily_data:
-            return {
-                'modal': '❌ Belum',
-                'stock': '❌ Belum',
-                'setoran': '❌ Belum'
+    async def handle_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, input_data: str):
+        """Process input data"""
+        user_id = str(update.effective_user.id)
+        item = input_data.split('_')[1]
+
+        if user_id not in self.data:
+            self.data[user_id] = {}
+
+        if item in self.prices['bahan']:
+            item_data = self.prices['bahan'][item]
+            self.data[user_id][item] = {
+                'nama': item_data['nama'],
+                'harga': item_data['harga'],
+                'jumlah': 1,
+                'total': item_data['harga']
             }
-
-        data = self.daily_data[user_id]
-        return {
-            'modal': '✅ Sudah' if data.get('modal') else '❌ Belum',
-            'stock': '✅ Sudah' if data.get('stock') else '❌ Belum',
-            'setoran': '✅ Sudah' if data.get('setoran') else '❌ Belum'
-        }
-
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle text messages"""
-        text = update.message.text.lower()
-        
-        if "=" in text and "," in text:  # Likely a manual modal input
-            await self.handle_modal_input(update)
-        else:
-            # Handle other message types or return to menu
+            await update.callback_query.answer(
+                f"✅ {item_data['nama']}: Rp{item_data['harga']:,}"
+            )
             await self.show_menu(update, context)
 
-    async def handle_modal_input(self, update: Update, item: str = None):
-        """Process modal input"""
-        user_id = str(update.effective_user.id)
-        
-        if
+    def get_status(self, user_id: str) -> dict:
+        """Get input status"""
+        if user_id not in self.data:
+            return {
+                'pengeluaran': '❌ Belum',
+                'stok': '❌ Belum',
+                'pemasukan': '❌ Belum'
+            }
+
+        data = self.data[user_id]
+        return {
+            'pengeluaran': '✅ Sudah' if data.get('pengeluaran') else '❌ Belum',
+            'stok': '✅ Sudah' if data.get('stok') else '❌ Belum',
+            'pemasukan': '✅ Sudah' if data.get('pemasukan') else '❌ Belum'
+        }
+
+    def save_data(self):
+        """Save data to file"""
+        with open('data/pempek.json', 'w') as f:
+            json.dump(self.data, f)
+
+    def load_data(self):
+        """Load data from file"""
+        try:
+            with open('data/pempek.json', 'r') as f:
+                self.data = json.load(f)
+        except:
+            self.data = {}
