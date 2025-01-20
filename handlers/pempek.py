@@ -1,8 +1,9 @@
-import logging
-import json
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from datetime import datetime
+import logging
+import json
+import os
 from config import PEMPEK_PRICES
 
 logger = logging.getLogger(__name__)
@@ -11,34 +12,50 @@ class PempekHandler:
     def __init__(self):
         self.data = {}
         self.prices = PEMPEK_PRICES
+        self.hari = {
+            0: 'Senin',
+            1: 'Selasa', 
+            2: 'Rabu',
+            3: 'Kamis',
+            4: 'Jumat',
+            5: 'Sabtu',
+            6: 'Minggu'
+        }
+        
+        # Load existing data
+        self.load_data()
 
     async def show_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show main pempek menu"""
-        user_id = str(update.effective_user.id)
         keyboard = [
             [
-                InlineKeyboardButton("💰 Pengeluaran", callback_data="pempek_pengeluaran"),
-                InlineKeyboardButton("📦 Stok", callback_data="pempek_stok")
+                InlineKeyboardButton("1️⃣ Input Pengeluaran", callback_data="pempek_pengeluaran"),
+                InlineKeyboardButton("2️⃣ Input Sisa", callback_data="pempek_sisa")
             ],
             [
-                InlineKeyboardButton("💵 Pemasukan", callback_data="pempek_pemasukan"),
-                InlineKeyboardButton("📊 Laporan", callback_data="pempek_laporan")
+                InlineKeyboardButton("3️⃣ Input Setoran", callback_data="pempek_setoran"),
+                InlineKeyboardButton("4️⃣ Input Plastik", callback_data="pempek_plastik")
+            ],
+            [
+                InlineKeyboardButton("📊 Generate Laporan", callback_data="pempek_report"),
+                InlineKeyboardButton("🔄 Reset", callback_data="pempek_reset")
             ],
             [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_main")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Check status
+        # Get status
+        user_id = str(update.effective_user.id)
         status = self.get_status(user_id)
         
         text = (
-            "*📝 LAPORAN PEMPEK*\n\n"
-            f"📅 Tanggal: {datetime.now().strftime('%d/%m/%Y')}\n\n"
-            "Status Input:\n"
-            f"• Pengeluaran: {status['pengeluaran']}\n"
-            f"• Stok: {status['stok']}\n" 
-            f"• Pemasukan: {status['pemasukan']}\n\n"
-            "Pilih menu untuk mulai:"
+            f"*📝 LAPORAN {self.get_date_string()}*\n\n"
+            "*Status Input:*\n"
+            f"1️⃣ Pengeluaran: {status['pengeluaran']}\n"
+            f"2️⃣ Sisa Pempek: {status['sisa']}\n"
+            f"3️⃣ Setoran: {status['setoran']}\n"
+            f"4️⃣ Sisa Plastik: {status['plastik']}\n\n"
+            "_Pilih menu untuk input data_"
         )
 
         if update.callback_query:
@@ -54,47 +71,27 @@ class PempekHandler:
                 parse_mode='Markdown'
             )
 
-    async def handle_callback(self, callback_data: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle pempek menu callbacks"""
-        user_id = str(update.effective_user.id)
-        action = callback_data.split('_')[1]
-
-        handlers = {
-            'pengeluaran': self.show_pengeluaran_menu,
-            'stok': self.show_stok_menu,
-            'pemasukan': self.show_pemasukan_menu,
-            'laporan': self.show_laporan
-        }
-
-        if action in handlers:
-            await handlers[action](update, context)
-        elif callback_data.startswith('input_'):
-            await self.handle_input(update, context, callback_data)
-
-    async def show_pengeluaran_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show pengeluaran input menu"""
+    async def handle_pengeluaran(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle pengeluaran input"""
         keyboard = [
             [
-                InlineKeyboardButton("💧 Air Galon (4.000)", callback_data="input_air"),
-                InlineKeyboardButton("🔥 Gas (22.000)", callback_data="input_gas")
+                InlineKeyboardButton("💧 Air (4.000)", callback_data="pengeluaran_air"),
+                InlineKeyboardButton("🔥 Gas (22.000)", callback_data="pengeluaran_gas")
             ],
             [
-                InlineKeyboardButton("🛍️ Plastik (2.000)", callback_data="input_plastik"),
-                InlineKeyboardButton("🧊 Es Batu (3.000)", callback_data="input_es")
+                InlineKeyboardButton("👤 Dimas", callback_data="pengeluaran_dimas"),
+                InlineKeyboardButton("✏️ Input Manual", callback_data="pengeluaran_manual")
             ],
-            [
-                InlineKeyboardButton("✏️ Input Manual", callback_data="input_manual"),
-                InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")
-            ]
+            [InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         text = (
-            "*💰 INPUT PENGELUARAN*\n\n"
+            "*1️⃣ INPUT PENGELUARAN*\n\n"
             "Pilih item atau input manual:\n\n"
-            "Format input manual:\n"
-            "item=jumlah=harga\n"
-            "Contoh: plastik=2=4000"
+            "Format manual:\n"
+            "`nama=harga`\n"
+            "Contoh: `doubletip=5000`"
         )
 
         await update.callback_query.edit_message_text(
@@ -103,52 +100,79 @@ class PempekHandler:
             parse_mode='Markdown'
         )
 
-    async def handle_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, input_data: str):
-        """Process input data"""
-        user_id = str(update.effective_user.id)
-        item = input_data.split('_')[1]
+    async def handle_sisa_pempek(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle sisa pempek input"""
+        keyboard = [
+            [InlineKeyboardButton("🟡 Input Pempek Kecil", callback_data="sisa_kecil")],
+            [InlineKeyboardButton("🔵 Input Pempek Gede", callback_data="sisa_gede")],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        if user_id not in self.data:
-            self.data[user_id] = {}
+        text = (
+            "*2️⃣ INPUT SISA PEMPEK*\n\n"
+            "*Harga per pcs:*\n"
+            "• Kecil = Rp2.500\n"
+            "• Gede = Rp12.000\n\n"
+            "Format: ketik angka saja\n"
+            "Contoh: `36`"
+        )
 
-        if item in self.prices['bahan']:
-            item_data = self.prices['bahan'][item]
-            self.data[user_id][item] = {
-                'nama': item_data['nama'],
-                'harga': item_data['harga'],
-                'jumlah': 1,
-                'total': item_data['harga']
-            }
-            await update.callback_query.answer(
-                f"✅ {item_data['nama']}: Rp{item_data['harga']:,}"
-            )
-            await self.show_menu(update, context)
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-    def get_status(self, user_id: str) -> dict:
-        """Get input status"""
-        if user_id not in self.data:
-            return {
-                'pengeluaran': '❌ Belum',
-                'stok': '❌ Belum',
-                'pemasukan': '❌ Belum'
-            }
+    async def handle_setoran(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle setoran input"""
+        keyboard = [
+            [
+                InlineKeyboardButton("💳 Input QRIS", callback_data="setoran_qris"),
+                InlineKeyboardButton("💵 Input Cash", callback_data="setoran_cash")
+            ],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        data = self.data[user_id]
-        return {
-            'pengeluaran': '✅ Sudah' if data.get('pengeluaran') else '❌ Belum',
-            'stok': '✅ Sudah' if data.get('stok') else '❌ Belum',
-            'pemasukan': '✅ Sudah' if data.get('pemasukan') else '❌ Belum'
-        }
+        text = (
+            "*3️⃣ INPUT SETORAN*\n\n"
+            "Pilih metode pembayaran:\n\n"
+            "Format: ketik angka saja\n"
+            "Contoh: `1040000`"
+        )
 
-    def save_data(self):
-        """Save data to file"""
-        with open('data/pempek.json', 'w') as f:
-            json.dump(self.data, f)
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-    def load_data(self):
-        """Load data from file"""
-        try:
-            with open('data/pempek.json', 'r') as f:
-                self.data = json.load(f)
-        except:
-            self.data = {}
+    async def handle_plastik(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle plastik input"""
+        keyboard = [
+            [InlineKeyboardButton("1/4", callback_data="plastik_14")],
+            [InlineKeyboardButton("1/2", callback_data="plastik_12")],
+            [InlineKeyboardButton("1", callback_data="plastik_1")],
+            [InlineKeyboardButton("Kantong", callback_data="plastik_kantong")],
+            [InlineKeyboardButton("🛢️ Status Minyak", callback_data="plastik_minyak")],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="menu_pempek")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        text = (
+            "*4️⃣ INPUT SISA PLASTIK*\n\n"
+            "Format input:\n"
+            "`baik=rusak`\n"
+            "Contoh: `3=1`"
+        )
+
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+    async def generate_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Generate formatted report"""
+        user_
