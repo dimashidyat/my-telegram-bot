@@ -15,7 +15,7 @@ from handlers.health import HealthHandler
 from handlers.relationship import RelationshipHandler
 
 # Bot token dari environment variable atau config
-TOKEN = os.getenv("BOT_TOKEN") or "7092522264:AAHsi2KM-8D8XcfIg09vptDyHiB28lRKQJY"
+TOKEN = os.getenv("BOT_TOKEN") or "8051798766:AAFsLpMI70O9od2Az5aYv7oanz6aq_lBHZk"
 
 class DimasBot:
     def __init__(self):
