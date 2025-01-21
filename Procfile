@@ -1,1 +1,1 @@
-worker: python main.py --skip-healthcheck
+worker: python main.py
