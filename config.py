@@ -2,7 +2,7 @@ import os
 from datetime import time, date
 
 # Bot Config
-TOKEN = "7092522264:AAHsi2KM-8D8XcfIg09vptDyHiB28lRKQJY"
+TOKEN = "8051798766:AAFsLpMI70O9od2Az5aYv7oanz6aq_lBHZk"
 CHAT_ID = "2031898002"
 
 # Personal Data
